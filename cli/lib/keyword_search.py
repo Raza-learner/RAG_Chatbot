@@ -1,10 +1,19 @@
-import json
-import os
+from .search_utils import DEFAULT_SEARCH_LIMIT, load_movies
+import string
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-DATA_PATH = os.path.join(PROJECT_ROOT, "data", "movies.json")
+def search_command(query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> list[dict]:
+    movies = load_movies()
+    results = []
+    for movie in movies:
+        preprocess_query = preprocess_text(query)
+        preprocess_title = preprocess_text(movie["title"])
+        if preprocess_query in preprocess_title:
+            results.append(movie)
+            if len(results) >= limit:
+                break
+    return results
 
-def load_movies() -> list[dict]:
-    with open(DATA_PATH, 'r') as file:  # Loads from a subfolder
-        movies = json.load(file)
-    return data["movies"]
+def preprocess_text(text:str) -> str:
+        text=text.lower()
+        text = text.translate(str.maketrans("","",string.punctuation))
+        return text
