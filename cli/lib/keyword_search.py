@@ -11,6 +11,7 @@ from .search_utils import (
     DEFAULT_SEARCH_LIMIT,
     load_movies,
     load_stopwords,
+    BM25_K1,
 )
 
 
@@ -22,7 +23,7 @@ class InvertedIndex:
         self.docmap_path = os.path.join(CACHE_DIR, "docmap.pkl")
         self.tf_path = os.path.join(CACHE_DIR, "term_frequencies.pkl")
         self.term_frequencies = defaultdict(Counter)
-
+          
     def build(self) -> None:
         movies = load_movies()
         for m in movies:
@@ -84,9 +85,19 @@ class InvertedIndex:
         if len(tokens) != 1:
             raise ValueError("term must be a single token")
         token = tokens[0]
-        N = len(self.docmap)
-        df = len(self.index.get(token, set()))
-        return math.log((N -df + 0.5) / (df+0.5) + 1)
+        doc_count = len(self.docmap)
+        term_doc_count = len(self.index.get(token, set()))
+        return math.log((doc_count -term_doc_count + 0.5) / (te+0.5) + 1)
+    
+    def get_bm25_tf(self, doc_id, term, k1=BM25_K1)  -> float:
+        tokens = tokenize_text(term)
+        if len(tokens) != 1:
+            raise ValueError("term must be a single token")
+        token = tokens[0]
+        tf = self.term_frequencies[doc_id].get(token,0)
+        if tf == 0:
+            return 0.0
+        return (tf * (k1 + 1)) / (tf + k1)  
 
 
 def build_command() -> None:
@@ -160,3 +171,8 @@ def bm25_idf_command( term: str) -> float:
     idx = InvertedIndex()
     idx.load()
     return idx.get_bm25_idf(term)
+
+def bm25_tf_command(doc_id:int, term:str,k1: float = BM25_K1) -> float:
+    idx = InvertedIndex()
+    idx.load()
+    return idx.get_bm25_tf(doc_id,term,k1=k1)
