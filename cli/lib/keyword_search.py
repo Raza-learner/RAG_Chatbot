@@ -12,6 +12,7 @@ from .search_utils import (
     load_movies,
     load_stopwords,
     BM25_K1,
+    BM25_B,
 )
 
 
@@ -23,6 +24,8 @@ class InvertedIndex:
         self.docmap_path = os.path.join(CACHE_DIR, "docmap.pkl")
         self.tf_path = os.path.join(CACHE_DIR, "term_frequencies.pkl")
         self.term_frequencies = defaultdict(Counter)
+        self.doc_lengths: dict[int,int] = {}
+        self.doc_lengths_path  = os.path.join(CACHE_DIR,"doc_lengths.pkl")
           
     def build(self) -> None:
         movies = load_movies()
@@ -40,7 +43,9 @@ class InvertedIndex:
             pickle.dump(self.docmap, f)
         with open(self.tf_path, "wb") as f:
             pickle.dump(self.term_frequencies, f)
-
+        with open(self.doc_lengths_path, "wb") as f:
+            pickle.dump(self.doc_lengths, f)
+ 
     def load(self) -> None:
         with open(self.index_path, "rb") as f:
             self.index = pickle.load(f)
@@ -48,6 +53,9 @@ class InvertedIndex:
             self.docmap = pickle.load(f)
         with open(self.tf_path, "rb") as f:
             self.term_frequencies = pickle.load(f)
+        with open(self.doc_lengths_path, "rb") as f:
+            self.doc_lengths = pickle.load(f)
+
 
     def get_documents(self, term: str) -> list[int]:
         doc_ids = self.index.get(term, set())
@@ -58,6 +66,7 @@ class InvertedIndex:
         for token in set(tokens):
             self.index[token].add(doc_id)
         self.term_frequencies[doc_id].update(tokens)
+        self.doc_lengths[doc_id] = len(tokens)
 
     def get_tf(self, doc_id: int, term: str) -> int:
         tokens = tokenize_text(term)
@@ -88,17 +97,32 @@ class InvertedIndex:
         doc_count = len(self.docmap)
         term_doc_count = len(self.index.get(token, set()))
         return math.log((doc_count -term_doc_count + 0.5) / (te+0.5) + 1)
-    
-    def get_bm25_tf(self, doc_id, term, k1=BM25_K1)  -> float:
+    def get_bm25_tf(self, doc_id: int, term: str, k1: float = BM25_K1, b: float = BM25_B) -> float:
         tokens = tokenize_text(term)
         if len(tokens) != 1:
             raise ValueError("term must be a single token")
         token = tokens[0]
-        tf = self.term_frequencies[doc_id].get(token,0)
-        if tf == 0:
-            return 0.0
-        return (tf * (k1 + 1)) / (tf + k1)  
 
+        raw_tf = self.term_frequencies[doc_id].get(token, 0)
+        if raw_tf == 0:
+            return 0.0
+
+        doc_length = self.doc_lengths.get(doc_id, 0)
+        avg_length = self.__get_avg_doc_length()
+
+        if avg_length == 0:
+            return 0.0
+
+        length_norm = 1 - b + b * (doc_length / avg_length)
+        denominator = raw_tf + k1 * length_norm
+        return (raw_tf * (k1 + 1)) / denominator
+
+    def __get_avg_doc_length(self) -> float:
+
+        if len(self.doc_lengths) == 0:
+            return 0.0
+        return sum(self.doc_lengths.values())/len(self.doc_lengths)
+          
 
 def build_command() -> None:
     idx = InvertedIndex()
@@ -172,7 +196,7 @@ def bm25_idf_command( term: str) -> float:
     idx.load()
     return idx.get_bm25_idf(term)
 
-def bm25_tf_command(doc_id:int, term:str,k1: float = BM25_K1) -> float:
+def bm25_tf_command(doc_id:int, term:str ,*,k1: float = BM25_K1 ,b: float = BM25_B) -> float:
     idx = InvertedIndex()
-    idx.load()
-    return idx.get_bm25_tf(doc_id,term,k1=k1)
+    idx.load() 
+    return idx.get_bm25_tf(doc_id,term,k1=k1,b=b)
