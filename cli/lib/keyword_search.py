@@ -3,7 +3,6 @@ import os
 import pickle
 import string
 from collections import Counter, defaultdict
-
 from nltk.stem import PorterStemmer
 
 from .search_utils import (
@@ -96,7 +95,8 @@ class InvertedIndex:
         token = tokens[0]
         doc_count = len(self.docmap)
         term_doc_count = len(self.index.get(token, set()))
-        return math.log((doc_count -term_doc_count + 0.5) / (te+0.5) + 1)
+        return math.log((doc_count - term_doc_count + 0.5) / (term_doc_count + 0.5) + 1)
+        
     def get_bm25_tf(self, doc_id: int, term: str, k1: float = BM25_K1, b: float = BM25_B) -> float:
         tokens = tokenize_text(term)
         if len(tokens) != 1:
@@ -122,7 +122,38 @@ class InvertedIndex:
         if len(self.doc_lengths) == 0:
             return 0.0
         return sum(self.doc_lengths.values())/len(self.doc_lengths)
-          
+
+    def bm25(self, doc_id, term) -> float:
+        if not term or not term.strip():
+            return 0.0
+        return  self.get_bm25_idf(term) * self.get_bm25_tf(doc_id,term)
+
+    def bm25_search(self, query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> list[dict]:
+        
+
+        query_tokens = [t for t in tokenize_text(query) if t.strip()]
+        if not query_tokens:
+            return []
+
+        scores = defaultdict(float)
+        for doc_id in self.docmap.keys():
+            for token in query_tokens:
+                scores[doc_id] += self.bm25(doc_id, token)
+
+        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+        top_results = []
+        for i, (doc_id, score) in enumerate(ranked):
+            if i >= limit:
+                break
+            movie = self.docmap[doc_id]
+            top_results.append({
+                "id": doc_id,
+                "title": movie["title"],
+                "score": round(score, 4)
+            })
+
+        return top_results   
 
 def build_command() -> None:
     idx = InvertedIndex()
