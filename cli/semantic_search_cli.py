@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 
 import argparse
+from lib.semantic_search import verify_model
 
 def main():
     parser = argparse.ArgumentParser(description="Semantic Search CLI")
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # Add the 'verify' command
+    subparsers.add_parser("verify", help="Verify that the embedding model loads correctly")
+
     args = parser.parse_args()
 
     match args.command:
+        case "verify":
+            print("Initiated....")
+            verify_model()
         case _:
             parser.print_help()
 
