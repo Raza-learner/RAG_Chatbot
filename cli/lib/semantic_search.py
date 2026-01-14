@@ -1,6 +1,7 @@
 from sentence_transformers import SentenceTransformer
 import numpy as np
-
+from .search_utils import load_movies,CACHE_DIR
+import os
 class SemanticSearch:
     def __init__(self):
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -32,8 +33,23 @@ class SemanticSearch:
         return embeddings
 
     def load_or_create_embeddings(self, documents):
-        pass
-        #continue from here...
+        self.documents = documents
+        self.document_map = {doc["id"]: doc for doc in documents}
+        embeddings_path = os.path.join(CACHE_DIR, "movie_embeddings.npy")
+        if os.path.exists(embeddings_path):
+            print(f"File exists{embeddings_path}")
+            embeddings = np.load(embeddings_path)
+            if len(embeddings) == len(documents):
+                self.embeddings = embeddings
+                print("Cached embeddings loaded successfully")
+                return embeddings
+            else:
+                print("Cached embeddings length mismatch → rebuilding...")
+        
+        
+        print("No valid cache found → generating new embeddings...")
+        return self.build_embeddings(documents)
+
 def verify_model()-> None:
     searcher =SemanticSearch()
     MODEL = searcher.model
@@ -48,4 +64,10 @@ def embed_text(text):
     print(f"First 3 dimensions: {embedding[:3]}")
     print(f"Dimensions: {embedding.shape[0]}")
 
+def verify_embeddings():
+    searcher =  SemanticSearch()
+    documents = load_movies()
+    embeddings = searcher.load_or_create_embeddings(documents)
+    print(f"Number of docs:   {len(documents)}")
+    print(f"Embeddings shape: {embeddings.shape[0]} vectors in {embeddings.shape[1]} dimensions")
 
