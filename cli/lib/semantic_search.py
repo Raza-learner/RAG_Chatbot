@@ -49,7 +49,7 @@ class SemanticSearch:
         
         print("No valid cache found → generating new embeddings...")
         return self.build_embeddings(documents)
-
+    
 def verify_model()-> None:
     searcher =SemanticSearch()
     MODEL = searcher.model
@@ -70,4 +70,12 @@ def verify_embeddings():
     embeddings = searcher.load_or_create_embeddings(documents)
     print(f"Number of docs:   {len(documents)}")
     print(f"Embeddings shape: {embeddings.shape[0]} vectors in {embeddings.shape[1]} dimensions")
+
+def embed_query_text(query):
+    searcher = SemanticSearch()
+    embedding = searcher.generate_embedding(query)
+    print(f"Query: {query}")
+    print(f"First 5 dimensions: {embedding[:5]}")
+    print(f"Shape: {embedding.shape}")
+
 
