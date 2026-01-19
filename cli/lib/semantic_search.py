@@ -49,7 +49,28 @@ class SemanticSearch:
         
         print("No valid cache found → generating new embeddings...")
         return self.build_embeddings(documents)
-    
+
+    def search(self, query, limit):
+        if self.embeddings is None:
+            raise ValueError("No embeddings loaded. Call `load_or_create_embeddings` first.")
+        query_embeddings = self.generate_embedding(query)
+        result = []
+        for i,movie_embeddings in enumerate(self.embeddings):
+            score = cosine_similarity(movie_embeddings,query_embeddings)
+            movie = self.documents[i]
+            result.append((score,movie))
+        result.sort(key=lambda x:x[0],reverse=True)
+
+        top_results = []
+        for score,movie in result[:limit]:
+            top_results.append({
+                "score": round(score, 4),
+                "title": movie["title"],
+                "description": movie["description"]
+            })
+
+        return top_results
+
 def verify_model()-> None:
     searcher =SemanticSearch()
     MODEL = searcher.model
@@ -78,4 +99,12 @@ def embed_query_text(query):
     print(f"First 5 dimensions: {embedding[:5]}")
     print(f"Shape: {embedding.shape}")
 
+def cosine_similarity(vec1, vec2):
+    dot_product = np.dot(vec1, vec2)
+    norm1 = np.linalg.norm(vec1)
+    norm2 = np.linalg.norm(vec2)
 
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+
+    return dot_product / (norm1 * norm2)
