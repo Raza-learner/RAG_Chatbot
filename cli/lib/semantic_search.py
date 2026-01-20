@@ -2,6 +2,7 @@ from sentence_transformers import SentenceTransformer
 import numpy as np
 from .search_utils import load_movies,CACHE_DIR
 import os
+import re
 class SemanticSearch:
     def __init__(self):
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -109,18 +110,81 @@ def cosine_similarity(vec1, vec2):
 
     return dot_product / (norm1 * norm2)
 
-def chunk_text(text: str, chunk_size: int = 200) -> None:
-    words = text.split()
-    
-    if not words:
+def chunk_text(text: str, chunk_size: int = 200, overlap: int = 0) -> None:
+    """
+    Split text into fixed-size word chunks with optional overlap.
+    """
+    if not text.strip():
         print("Chunking 0 characters")
         return
-    
+
+    if overlap < 0:
+        overlap = 0
+
+    # Prevent overlap >= chunk_size (would cause infinite loop or useless chunks)
+    if overlap >= chunk_size:
+        overlap = chunk_size - 1  # max reasonable overlap
+
+    # Split into words
+    words = text.split()
+
     total_chars = len(text)
     print(f"Chunking {total_chars} characters")
-    
-    for i in range(0, len(words), chunk_size):
-        chunk_words = words[i:i + chunk_size]
+
+    chunks = []
+    start = 0
+
+    while start < len(words):
+        # Take chunk_size words (or fewer at the end)
+        end = min(start + chunk_size, len(words))
+        chunk_words = words[start:end]
         chunk_str = " ".join(chunk_words)
-        chunk_number = (i // chunk_size) + 1
-        print(f"{chunk_number}. {chunk_str}")
+        chunks.append(chunk_str)
+
+        # Move forward by chunk_size - overlap
+        start += chunk_size - overlap
+
+        # If next start would go beyond or no progress possible, stop
+        if start >= len(words):
+            break
+
+    # Print chunks
+    for i, chunk in enumerate(chunks, 1):
+        print(f"{i}. {chunk}")
+
+def semantic_chunk(text: str, max_chunk_size: int = 4, overlap: int = 0)->None:
+    if not text.strip():
+        print("Chunking 0 characters")
+        return
+    if overlap < 0:
+        overlap = 0
+
+    if overlap >= max_chunk_size:
+        overlap = max_chunk_size - 1 
+
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    sentences = [s for s in sentences if s.strip()]
+    
+    
+    total_chars = len(text)
+    print(f"Semantic Chunking {total_chars} characters")
+
+    chunks = []
+    start = 0
+
+    while start < len(sentences):
+        # Take chunk_size words (or fewer at the end)
+        end = min(start + max_chunk_size, len(sentences))
+        chunk_sentenes = sentences[start:end]
+        chunk_str = " ".join(chunk_sentenes)
+        chunks.append(chunk_str)
+
+        # Move forward by chunk_size - overlap
+        start += max_chunk_size - overlap
+
+        # If next start would go beyond or no progress possible, stop
+        if start >= len(sentences):
+            break
+
+
+
