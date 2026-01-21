@@ -9,7 +9,8 @@ from lib.semantic_search import (
         SemanticSearch,
         load_movies,
         chunk_text,
-        semantic_chunk
+        semantic_chunking,
+        ChunkedSemanticSearch,
     )
 
 def main():
@@ -55,6 +56,11 @@ def main():
         default=0,
         help="Number of overlapping sentences between chunks (default: 0)"
     )
+
+    subparsers.add_parser(
+        "embed-chunks",
+        help="Generate or load embeddings for all document chunks"
+    )
     args = parser.parse_args()
 
     match args.command:
@@ -90,11 +96,18 @@ def main():
        
         case "semantic-chunk":
             print(f"Semantically chunking with max {args.max_chunk_size} sentences, overlap {args.overlap}...")
-            semantic_chunk(
+            semantic_chunking(
                 args.text,
                 max_chunk_size=args.max_chunk_size,
                 overlap=args.overlap
-            )        
+            )
+        case "embed-chunks":
+            print("Embedding movie chunks...")
+            documents = load_movies()
+            searcher = ChunkedSemanticSearch()
+            embeddings = searcher.load_or_create_chunk_embeddings(documents)
+            total_chunks = len(embeddings) if embeddings is not None else 0
+            print(f"Generated/Loaded {total_chunks} chunked embeddings")
         case _:
             parser.print_help()
 
