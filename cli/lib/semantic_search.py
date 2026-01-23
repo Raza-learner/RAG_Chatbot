@@ -138,6 +138,54 @@ class ChunkedSemanticSearch(SemanticSearch):
         print("No valid cache found → generating new chunk embeddings...")
         return self.build_chunk_embeddings(documents)
 
+    def search_chunks(self, query: str, limit: int = 10) -> list[dict]:
+        if self.chunk_embeddings is None:
+            raise ValueError("No chunk embeddings loaded. Call load_or_create_chunk_embeddings first.")
+
+        # Generate query embedding (one vector)
+        query_embedding = self.generate_embedding(query)
+
+        # Collect chunk-level scores
+        chunk_scores = []
+        for i, chunk_embedding in enumerate(self.chunk_embeddings):
+            metadata = self.chunk_metadata[i]
+            score = cosine_similarity(query_embedding, chunk_embedding)
+
+            chunk_scores.append({
+                "chunk_idx": metadata["chunk_idx"],
+                "movie_idx": metadata["movie_idx"],
+                "score": score
+            })
+
+        # Aggregate to movie level — keep only best score per movie
+        movie_scores = {}
+        for chunk in chunk_scores:
+            movie_idx = chunk["movie_idx"]
+            score = chunk["score"]
+            if movie_idx not in movie_scores or score > movie_scores[movie_idx]:
+                movie_scores[movie_idx] = score
+
+        # Sort movies by best score descending
+        movie_list = sorted(
+            movie_scores.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        # Build final results
+        top_results = []
+        for movie_idx, score in movie_list[:limit]:
+            movie = self.documents[movie_idx]
+            result_dict = {
+                "id": movie["id"],
+                "title": movie["title"],
+                "document": movie["description"][:100],
+                "score": round(float(score), 4),
+                "metadata": {}
+            }
+            top_results.append(result_dict)
+
+        return top_results
 
 # Helper functions
 
