@@ -262,7 +262,9 @@ def chunk_text(text: str, chunk_size: int = 200, overlap: int = 0) -> None:
 
 
 def semantic_chunking(text: str, max_chunk_size: int = 4, overlap: int = 0):
-    if not text.strip():
+    
+    text = text.strip()
+    if not text:
         print("Semantically chunking 0 characters")
         return []
 
@@ -273,6 +275,9 @@ def semantic_chunking(text: str, max_chunk_size: int = 4, overlap: int = 0):
 
     sentences = re.split(r"(?<=[.!?])\s+", text.strip())
     sentences = [s.strip() for s in sentences if s.strip()]
+    
+    if len(sentences) == 1 and not sentences[0].endswith(('.', '!', '?')):
+        return [text]
 
     total_chars = len(text)
     print(f"Semantically chunking {total_chars} characters")
