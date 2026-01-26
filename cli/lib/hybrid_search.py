@@ -79,8 +79,65 @@ class HybridSearch:
         
         return top_results
 
-    def rrf_search(self, query, k, limit=10):
-        raise NotImplementedError("RRF hybrid search is not implemented yet.")
+    def rrf_search(self, query: str, k: int = 60, limit: int = 10) -> list[dict]:
+        """
+        Hybrid search using Reciprocal Rank Fusion (RRF).
+        Combines BM25 and semantic chunk rankings.
+        """
+        # 1. Get lots of candidates (500× limit for good coverage)
+        bm25_results = self._bm25_search(query, limit=500 * limit)
+        sem_results = self.semantic_search.search_chunks(query, limit=500 * limit)
+
+        # 2. Build movie → rank dicts (rank starts from 1 = best)
+        bm25_rank = {}
+        for rank, res in enumerate(bm25_results, 1):
+            movie_id = res["id"]
+            bm25_rank[movie_id] = rank
+
+        sem_rank = {}
+        for rank, res in enumerate(sem_results, 1):
+            movie_id = res["id"]
+            sem_rank[movie_id] = rank
+
+        # 3. Compute RRF score for every movie that appears in at least one list
+        all_movie_ids = set(bm25_rank.keys()) | set(sem_rank.keys())
+        rrf_scores = {}
+
+        for movie_id in all_movie_ids:
+            rank_bm25 = bm25_rank.get(movie_id, float('inf'))  # inf if not present
+            rank_sem = sem_rank.get(movie_id, float('inf'))
+            score = rrf_score(rank_bm25, k) + rrf_score(rank_sem, k)
+            rrf_scores[movie_id] = score
+
+        # 4. Sort by RRF score descending
+        sorted_movies = sorted(
+            rrf_scores.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        # 5. Build formatted results for top limit
+        top_results = []
+        for movie_id, rrf_score_val in sorted_movies[:limit]:
+            movie = self.document_map.get(movie_id)
+            if movie is None:
+                continue
+
+            bm25_r = bm25_rank.get(movie_id, "N/A")
+            sem_r = sem_rank.get(movie_id, "N/A")
+
+            top_results.append({
+                "id": movie["id"],
+                "title": movie["title"],
+                "document": movie["description"][:100],
+                "score": round(rrf_score_val, 4),  # RRF score
+                "metadata": {
+                    "bm25_rank": bm25_r,
+                    "semantic_rank": sem_r
+                }
+            })
+
+        return top_results
 
 def normalize_scores(scores: list[float]) -> list[float]:
     """
@@ -98,3 +155,9 @@ def normalize_scores(scores: list[float]) -> list[float]:
 
     denom = max_score - min_score
     return [(s - min_score) / denom for s in scores]
+
+def rrf_score(rank: int, k: int = 60) -> float:
+    """
+    Reciprocal Rank Fusion formula: 1 / (k + rank)
+    """
+    return 1.0 / (k + rank)
