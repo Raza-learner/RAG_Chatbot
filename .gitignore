@@ -10,3 +10,4 @@ wheels/
 cache/
 # Virtual environments
 .venv
+Session.vim
