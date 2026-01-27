@@ -2,47 +2,10 @@ import argparse
 import os
 from dotenv import load_dotenv
 from google import genai
-from lib.hybrid_search import normalize_scores,HybridSearch
+from lib.hybrid_search import normalize_scores,HybridSearch, enhance_query_spell,enhance_query_rewrite,enhance_query_expand
 from lib.search_utils import load_movies
 
-def enhance_query_spell(query: str) -> str:
-    """Use Gemini to correct spelling in the query."""
-    load_dotenv()
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        print("Warning: GEMINI_API_KEY not found → skipping spell correction")
-        return query
 
-    client = genai.Client(api_key=api_key)
-
-    prompt = f"""Fix any spelling errors in this movie search query.
-    Only correct obvious typos. Don't change correctly spelled words.
-
-    Query: "{query}"
-
-    If no errors, return the original query.
-    Corrected:"""
-
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash', 
-            contents=prompt
-        )
-        
-        corrected = response.text.strip()
-        
-       
-        if corrected.lower().startswith("corrected:"):
-            corrected = corrected.split(":", 1)[1].strip()
-            
-       
-        corrected = corrected.strip('"')
-        
-        return corrected
-    except Exception as e:
-        print(f"Spell correction failed: {e} → using original query")
-        
-        return query
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hybrid Search CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -77,7 +40,7 @@ def main() -> None:
                             help="RRF constant k (default: 60)")
     rrf_parser.add_argument("--limit", type=int, default=5,
                             help="Number of results (default: 5)")
-    rrf_parser.add_argument("--enhance",type=str,choices=["spell"],
+    rrf_parser.add_argument("--enhance",type=str,choices=["spell","rewrite","expand"],
                             help="Query enhancement method",
     )
     args = parser.parse_args()
@@ -99,12 +62,23 @@ def main() -> None:
             final_query = original_query
 
             # Apply enhancement if requested
-            if args.enhance == "spell":
+            if args.enhance == "spell" or args.enhance == "rewrite":
                 final_query = enhance_query_spell(original_query)
-                if final_query != original_query:
-                    print(f"Enhanced query (spell): '{original_query}' → '{final_query}'")
-                else:
-                    print("No spelling corrections needed.")
+                if args.enhance:
+                    if args.enhance == "spell":
+                        final_query = enhance_query_spell(original_query)
+                        method = "spell"
+                    elif args.enhance == "rewrite":
+                        final_query = enhance_query_rewrite(original_query)
+                        method = "rewrite"
+                    elif args.enhance == "expand":
+                        final_query = enhance_query_expand(original_query)
+                        method = "expand"
+
+                    if final_query != original_query:
+                        print(f"Enhanced query ({method}): '{original_query}' → '{final_query}'")
+                    else:
+                        print(f"No enhancement needed ({method}).")
 
             print(f"RRF hybrid search (k={args.k}): {final_query}")
             docs = load_movies()
