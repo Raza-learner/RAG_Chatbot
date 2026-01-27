@@ -81,14 +81,16 @@ class HybridSearch:
         
         return top_results
 
-    def rrf_search(self, query: str, k: int = 60, limit: int = 10) -> list[dict]:
+    def rrf_search(self, query: str, k: int = 60, limit: int = 10, rerank_method: str = None) -> list[dict]:
         """
         Hybrid search using Reciprocal Rank Fusion (RRF).
         Combines BM25 and semantic chunk rankings.
         """
-        # 1. Get lots of candidates (500× limit for good coverage)
-        bm25_results = self._bm25_search(query, limit=500 * limit)
-        sem_results = self.semantic_search.search_chunks(query, limit=500 * limit)
+        # Fetch more candidates if reranking
+        fetch_limit = limit * 5 if rerank_method else limit
+
+        bm25_results = self._bm25_search(query, limit=fetch_limit)
+        sem_results = self.semantic_search.search_chunks(query, limit=fetch_limit)
 
         # 2. Build movie → rank dicts (rank starts from 1 = best)
         bm25_rank = {}
@@ -118,9 +120,9 @@ class HybridSearch:
             reverse=True
         )
 
-        # 5. Build formatted results for top limit
-        top_results = []
-        for movie_id, rrf_score_val in sorted_movies[:limit]:
+        # 5. Build formatted results
+        initial_results = []
+        for movie_id, rrf_score_val in sorted_movies:
             movie = self.document_map.get(movie_id)
             if movie is None:
                 continue
@@ -128,18 +130,28 @@ class HybridSearch:
             bm25_r = bm25_rank.get(movie_id, "N/A")
             sem_r = sem_rank.get(movie_id, "N/A")
 
-            top_results.append({
+            initial_results.append({
                 "id": movie["id"],
                 "title": movie["title"],
                 "document": movie["description"][:100],
-                "score": round(rrf_score_val, 4),  # RRF score
+                "score": round(rrf_score_val, 4),
                 "metadata": {
                     "bm25_rank": bm25_r,
                     "semantic_rank": sem_r
                 }
             })
 
-        return top_results
+        # Apply rerank if requested
+        if rerank_method == "individual":
+            print(f"Reranking top {len(initial_results)} results using individual method...")
+            return llm_rerank(query, initial_results, limit)
+
+        elif rerank_method == "batch":
+            print(f"Reranking top {len(initial_results)} results using batch method...")
+            return batch_llm_rerank(query, initial_results, limit)
+
+        # No rerank → return original RRF results truncated
+        return initial_results[:limit]        
 
 def normalize_scores(scores: list[float]) -> list[float]:
     """
@@ -297,3 +309,109 @@ Query: "{query}" """
         return query
 
 
+def llm_rerank(query: str, results: list[dict], limit: int) -> list[dict]:
+    """Rerank top results using Gemini individual scoring."""
+    load_dotenv()
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("Warning: GEMINI_API_KEY missing → skipping LLM rerank")
+        return results[:limit]
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-1.5-flash")
+
+    # Safety settings to allow more content (optional but helps with movie data)
+    safety_settings = [
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    ]
+
+    reranked = []
+    for res in results:
+        doc_text = f"{res['title']} - {res['document']}"
+        prompt = f"""Rate how well this movie matches the search query.
+
+Query: "{query}"
+Movie: {doc_text}
+
+Consider:
+- Direct relevance to query
+- User intent (what they're looking for)
+- Content appropriateness
+
+Rate 0-10 (10 = perfect match).
+Give me ONLY the number in your response, no other text or explanation.
+
+Score:"""
+
+        try:
+            response = model.generate_content(
+                prompt,
+                safety_settings=safety_settings
+            )
+            score_text = response.text.strip()
+            score = float(score_text) if score_text.isdigit() or '.' in score_text else 0.0
+        except Exception as e:
+            print(f"LLM rerank failed for {res['title']}: {e}")
+            score = 0.0
+
+        reranked.append({**res, "rerank_score": score})
+
+        time.sleep(3)  # avoid rate limits
+
+    # Sort by new LLM score descending
+    reranked.sort(key=lambda x: x["rerank_score"], reverse=True)
+
+    return reranked[:limit]
+
+def batch_llm_rerank(query: str, results: list[dict], limit: int) -> list[dict]:
+    """Rerank top results using a single Gemini batch prompt."""
+    load_dotenv()
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("Warning: GEMINI_API_KEY missing → skipping batch rerank")
+        return results[:limit]
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-1.5-flash")
+
+    # Build document list string
+    doc_list_str = ""
+    id_to_result = {}
+    for i, res in enumerate(results, 1):
+        doc_id = res["id"]
+        id_to_result[doc_id] = res
+        doc_list_str += f"ID {doc_id}: {res['title']} - {res['document']}\n"
+
+    prompt = f"""Rank these movies by relevance to the search query.
+
+Query: "{query}"
+
+Movies:
+{doc_list_str}
+
+Return ONLY the IDs in order of relevance (best match first). Return a valid JSON list, nothing else. For example:
+
+[75, 12, 34, 2, 1]"""
+
+    try:
+        response = model.generate_content(prompt)
+        response_text = response.text.strip()
+        # Extract JSON list (remove extra text if any)
+        if response_text.startswith('[') and response_text.endswith(']'):
+            ranked_ids = json.loads(response_text)
+        else:
+            ranked_ids = json.loads(response_text.split('[', 1)[1].rsplit(']', 1)[0])
+
+        # Map back to original results
+        reranked = []
+        for movie_id in ranked_ids:
+            if movie_id in id_to_result:
+                reranked.append(id_to_result[movie_id])
+
+        return reranked[:limit]
+    except Exception as e:
+        print(f"Batch rerank failed: {e} → using original RRF order")
+        return results[:limit]
