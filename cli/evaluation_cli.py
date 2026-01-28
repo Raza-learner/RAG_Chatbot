@@ -5,6 +5,71 @@ from pathlib import Path
 from lib.hybrid_search import HybridSearch
 from lib.search_utils import load_movies
 
+from google import genai
+from google.genai import types
+import json
+from dotenv import load_dotenv
+import os
+
+def llm_evaluate_results(query: str, results: list[dict]) -> list[int]:
+    """Use Gemini to score each result for relevance (0-3) with structured JSON."""
+    load_dotenv()
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("Warning: GEMINI_API_KEY missing → skipping evaluation")
+        return [0] * len(results)
+
+    # 1. Use the new Client pattern
+    client = genai.Client(api_key=api_key)
+
+    # 2. Format results for the prompt
+    formatted_results = [
+        f"ID {i}: {res['title']} - {res['document']}" 
+        for i, res in enumerate(results)
+    ]
+    formatted_str = "\n".join(formatted_results)
+
+    prompt = f"""Rate how relevant each result is to this query on a 0-3 scale:
+    Query: "{query}"
+
+    Results:
+    {formatted_str}
+
+    Scale:
+    - 3: Highly relevant
+    - 2: Relevant
+    - 1: Marginally relevant
+    - 0: Not relevant
+
+    Return a JSON list of integers representing the scores in the exact order provided."""
+
+    try:
+        # 3. Use GenerateContentConfig to force JSON output
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type='application/json',
+                # You can also provide a response_schema for 100% reliability
+                response_schema={
+                    "type": "array",
+                    "items": {"type": "integer"}
+                }
+            )
+        )
+
+        # 4. Extract and parse. The SDK's response.text is already cleaned.
+        scores = json.loads(response.text)
+        
+        if len(scores) != len(results):
+            print("Score count mismatch → padding with zeros")
+            return (scores + [0] * len(results))[:len(results)]
+            
+        return [int(s) for s in scores]
+
+    except Exception as e:
+        print(f"LLM evaluation failed: {e} → using default scores")
+        return [0] * len(results)
 def main():
     parser = argparse.ArgumentParser(description="Search Evaluation CLI")
     parser.add_argument(

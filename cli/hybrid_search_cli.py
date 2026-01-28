@@ -8,6 +8,7 @@ from lib.hybrid_search import (normalize_scores,
                                 enhance_query_rewrite,
                                 enhance_query_expand)
 from lib.search_utils import load_movies
+from evaluation_cli import llm_evaluate_results
 
 
 def main() -> None:
@@ -48,6 +49,11 @@ def main() -> None:
                             help="Query enhancement method",)
     rrf_parser.add_argument("--rerank-method",type=str,choices=["individual","batch","cross_encoder"],
                             help="Reranking method after RRF (individual = LLM per doc)",)
+    rrf_parser.add_argument(
+        "--evaluate",
+        action="store_true",  # boolean flag (no value needed)
+        help="Evaluate results with LLM relevance scoring (0-3)"
+    )
     args = parser.parse_args()
 
     match args.command:
@@ -65,6 +71,7 @@ def main() -> None:
         case "rrf-search":
             original_query = args.query
             final_query = original_query
+            print(f"[DEBUG] Original query: '{original_query}'")
 
             # Apply enhancement if requested
             
@@ -83,7 +90,7 @@ def main() -> None:
                     print(f"Enhanced query ({method}): '{original_query}' → '{final_query}'")
                 else:
                     print(f"No enhancement needed ({method}).")
-
+            print(f"[DEBUG] Final query sent to RRF: '{final_query}'")
             print(f"RRF hybrid search (k={args.k}): {final_query}")
             docs = load_movies()
             hybrid = HybridSearch(docs)
@@ -94,6 +101,7 @@ def main() -> None:
                 rerank_method=args.rerank_method
             )
 
+            # Print main results
             for i, res in enumerate(results, 1):
                 print(f"\n{i}. {res['title']}")
                 print(f"   RRF Score: {res['score']:.4f}")
@@ -104,7 +112,16 @@ def main() -> None:
                         print(f"   Rerank Score: {res['rerank_score']:.1f}/10")
                 print(f"   BM25 Rank: {res['metadata']['bm25_rank']}, "
                       f"Semantic Rank: {res['metadata']['semantic_rank']}")
-                print(f"   {res['document']}...")        
+                print(f"   {res['document']}...")
+
+            # If --evaluate is set, run LLM evaluation
+            if args.evaluate:
+                print("\nEvaluating results with LLM...")
+                eval_scores = llm_evaluate_results(final_query, results)
+                
+                print("\nLLM Evaluation Report:")
+                for i, (res, score) in enumerate(zip(results, eval_scores), 1):
+                    print(f"{i}. {res['title']}: {score}/3")        
         case _:
             parser.print_help()
 
