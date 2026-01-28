@@ -98,10 +98,13 @@ def main() -> None:
                 print(f"\n{i}. {res['title']}")
                 print(f"   RRF Score: {res['score']:.4f}")
                 if "rerank_score" in res:
-                    print(f"   Rerank Score: {res['rerank_score']:.1f}/10")
+                    if args.rerank_method == "cross_encoder":
+                        print(f"   Cross Encoder Score: {res['rerank_score']:.3f}")
+                    else:
+                        print(f"   Rerank Score: {res['rerank_score']:.1f}/10")
                 print(f"   BM25 Rank: {res['metadata']['bm25_rank']}, "
                       f"Semantic Rank: {res['metadata']['semantic_rank']}")
-                print(f"   {res['document']}...")
+                print(f"   {res['document']}...")        
         case _:
             parser.print_help()
 

@@ -2,6 +2,8 @@ import os
 from dotenv import load_dotenv
 from google import genai
 
+from sentence_transformers import CrossEncoder
+
 from .keyword_search import InvertedIndex
 from .semantic_search import ChunkedSemanticSearch
 from .search_utils import load_movies
@@ -149,8 +151,10 @@ class HybridSearch:
         elif rerank_method == "batch":
             print(f"Reranking top {len(initial_results)} results using batch method...")
             return batch_llm_rerank(query, initial_results, limit)
-
-        # No rerank → return original RRF results truncated
+        elif rerank_method == "cross_encoder":
+            print(f"Reranking top {len(initial_results)} results using cross_encoder method...")
+            return cross_encoder_rerank(query, initial_results, limit)
+    
         return initial_results[:limit]        
 
 def normalize_scores(scores: list[float]) -> list[float]:
@@ -414,4 +418,36 @@ Return ONLY the IDs in order of relevance (best match first). Return a valid JSO
         return reranked[:limit]
     except Exception as e:
         print(f"Batch rerank failed: {e} → using original RRF order")
+        return results[:limit]
+
+def cross_encoder_rerank(query: str, results: list[dict], limit: int) -> list[dict]:
+    """Rerank results using a cross-encoder model."""
+    if not results:
+        return []
+
+    # Prepare pairs: [query, doc_title - doc_text]
+    pairs = []
+    for res in results:
+        doc_text = f"{res['title']} - {res['document']}"
+        pairs.append([query, doc_text])
+
+    try:
+        # Load cross-encoder once (tiny and fast)
+        cross_encoder = CrossEncoder("cross-encoder/ms-marco-TinyBERT-L2-v2")
+
+        # Predict scores (higher = better relevance)
+        scores = cross_encoder.predict(pairs)
+
+        # Attach scores to results
+        reranked = []
+        for res, score in zip(results, scores):
+            reranked.append({**res, "rerank_score": float(score)})
+
+        # Sort by cross-encoder score descending
+        reranked.sort(key=lambda x: x["rerank_score"], reverse=True)
+
+        return reranked[:limit]
+
+    except Exception as e:
+        print(f"Cross-encoder rerank failed: {e} → using original RRF order")
         return results[:limit]
