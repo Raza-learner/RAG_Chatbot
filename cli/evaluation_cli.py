@@ -69,11 +69,17 @@ def main():
 
         retrieved_titles = [res["title"] for res in results]
 
-        relevant_in_top_k = len(relevant_titles & set(retrieved_titles))
-        precision = relevant_in_top_k / k if k > 0 else 0.0
-
+        relevant_retrieved = len(relevant_titles & set(retrieved_titles))
+        precision = relevant_retrieved / k if k > 0 else 0.0
+        recall = relevant_retrieved / len(relevant_titles) if relevant_titles else 0.0
+        if precision + recall == 0:
+            f1 = 0.0
+        else:
+            f1 = 2 * (precision * recall) / (precision + recall)
         print(f"- Query: {query}")
         print(f"  - Precision@{k}: {precision:.4f}")
+        print(f"  - Recall@{k}: {recall:.4f}")
+        print(f"  - F1 Score: {f1:4f}")
         print(f"  - Retrieved: {', '.join(retrieved_titles)}")
         print(f"  - Relevant: {', '.join(sorted(relevant_titles))}")
         print()
