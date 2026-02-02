@@ -8,7 +8,7 @@ from lib.hybrid_search import (normalize_scores,
                                 enhance_query_rewrite,
                                 enhance_query_expand)
 from lib.search_utils import load_movies
-from evaluation_cli import llm_evaluate_results
+from cli.evaluate
 
 
 def main() -> None:
@@ -71,7 +71,7 @@ def main() -> None:
         case "rrf-search":
             original_query = args.query
             final_query = original_query
-            print(f"[DEBUG] Original query: '{original_query}'")
+            rint(f"[DEBUG] Original query: '{original_query}'")
 
             # Apply enhancement if requested
             
@@ -100,8 +100,7 @@ def main() -> None:
                 limit=args.limit,
                 rerank_method=args.rerank_method
             )
-
-            # Print main results
+            print("[DEBUG] Raw RRF results (before reranking):")
             for i, res in enumerate(results, 1):
                 print(f"\n{i}. {res['title']}")
                 print(f"   RRF Score: {res['score']:.4f}")
@@ -112,16 +111,7 @@ def main() -> None:
                         print(f"   Rerank Score: {res['rerank_score']:.1f}/10")
                 print(f"   BM25 Rank: {res['metadata']['bm25_rank']}, "
                       f"Semantic Rank: {res['metadata']['semantic_rank']}")
-                print(f"   {res['document']}...")
-
-            # If --evaluate is set, run LLM evaluation
-            if args.evaluate:
-                print("\nEvaluating results with LLM...")
-                eval_scores = llm_evaluate_results(final_query, results)
-                
-                print("\nLLM Evaluation Report:")
-                for i, (res, score) in enumerate(zip(results, eval_scores), 1):
-                    print(f"{i}. {res['title']}: {score}/3")        
+                print(f"   {res['document']}...")        
         case _:
             parser.print_help()
 
