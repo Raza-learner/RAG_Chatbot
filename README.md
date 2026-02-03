@@ -169,4 +169,4 @@ Where `k` is a constant (default 60) and `rank_i(d)` is the rank of document `d`
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
